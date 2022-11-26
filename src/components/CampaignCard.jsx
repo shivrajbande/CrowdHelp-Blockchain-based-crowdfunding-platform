@@ -16,18 +16,32 @@ import FavoriteBorderRoundedIcon from "@mui/icons-material/FavoriteBorderRounded
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
 import ShareIcon from "@mui/icons-material/Share";
 
+// service imports..
+import { useNavigate } from "react-router-dom";
+
 function CampaignCard(props) {
+  const navigate = useNavigate();
+
   // extract the details..
   const {
     bannerUrl,
     campaignStatus,
     isFavoriteCampaign,
-    campaignTitle,
-    campaignDescription,
+    title,
+    description,
     ethRaised,
     ethFunded,
-    daysLeft,
+    deadline,
+    id,
   } = props.details;
+
+  // Find the no. of days left..
+  const today = Date.now();
+  console.log(deadline);
+  console.log(new Date(deadline));
+  const diffTime = Math.abs(today - new Date(deadline)); // get difference in milli-seconds
+  const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); // find diff in days.
+  console.log(daysLeft);
 
   // helpers ..
   function LinearProgressWithLabel(props) {
@@ -66,7 +80,10 @@ function CampaignCard(props) {
           image={bannerUrl}
         />
         <CardActionArea>
-          <CardContent sx={{ flexGrow: 1 }}>
+          <CardContent
+            sx={{ flexGrow: 1 }}
+            onClick={() => navigate(`/../campaign/${id}`)}
+          >
             <Stack
               flexDirection="row"
               justifyContent="space-between"
@@ -75,25 +92,25 @@ function CampaignCard(props) {
               <Typography component="p" fontSize={12} color="green">
                 {campaignStatus}
               </Typography>
-              <Stack direction="row">
-                <IconButton color="secondary">
-                  {isFavoriteCampaign ? (
-                    <FavoriteRoundedIcon size="small" />
-                  ) : (
-                    <FavoriteBorderRoundedIcon size="small" />
-                  )}
-                </IconButton>
-                <IconButton>
-                  <ShareIcon size="small" />
-                </IconButton>
-              </Stack>
+              <IconButton>
+                <ShareIcon size="small" />
+              </IconButton>
             </Stack>
 
             <Typography gutterBottom variant="h5" component="h2">
-              {campaignTitle}
+              {title}
             </Typography>
-            <Typography gutterBottom fontSize={15}>
-              {campaignDescription}
+            <Typography
+              gutterBottom
+              fontSize={15}
+              sx={{
+                display: "-webkit-box",
+                overflow: "hidden",
+                WebkitBoxOrient: "vertical",
+                WebkitLineClamp: 3,
+              }}
+            >
+              {description}
             </Typography>
             <Stack
               direction="row"
@@ -117,7 +134,7 @@ function CampaignCard(props) {
                 </Typography>
               </Stack>
             </Stack>
-            <LinearProgressWithLabel value={(ethFunded/ethRaised)*100} />
+            <LinearProgressWithLabel value={(ethFunded / ethRaised) * 100} />
             <Stack direction="row" alignItems={"center"}>
               <AccessTimeRoundedIcon />
               <Typography gutterBottom fontSize={14} color="grey">
