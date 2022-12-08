@@ -25,11 +25,11 @@ import { useWallet } from "use-wallet";
 // form handling
 import { useForm } from "react-hook-form";
 // [block-chain] smart-contract related imports..
-import { getCampaignDetails } from "../../../lib/getCampaigns";
+import { getCampaignDetails } from "../../../utils/getCampaigns";
 
 // smart-contract interaction -- for contribution of funds, withdrawing money & ending campaign.
-import Campaign from "../../../smart-contract/campaign";
-import web3 from "../../../smart-contract/web3";
+import Campaign from "../../../utils/contract/campaign";
+import web3 from "../../../utils/web3";
 
 // stylings..
 const StyledModal = styled(Modal)({
@@ -57,12 +57,40 @@ function ViewCampaign() {
   const wallet = useWallet();
 
   // for dealing with form values -- at contribution..
-  const { handleSubmit, register, formState, reset, getValues } = useForm({
+  const {
+    handleSubmit: contributionHandleSubmit,
+    register: contributionRegister,
+    formState: contributionFormState,
+    reset: contributionReset,
+  } = useForm({
     mode: "onChange",
   });
+
+  // for dealing with form values -- at abort campaign..
+  const {
+    handleSubmit: abortHandleSubmit,
+    register: abortRegister,
+    formState: abortFormState,
+    reset: abortReset,
+  } = useForm({
+    mode: "onChange",
+  });
+
+  // for dealing with form values -- at withdraw raised funds..
+  const {
+    handleSubmit: withdrawHandleSubmit,
+    register: withdrawRegister,
+    formState: withdrawFormState,
+    reset: withdrawReset,
+  } = useForm({
+    mode: "onChange",
+  });
+
   const [isContributionSuccess, setIsContributionSuccess] =
     React.useState(false);
   const [contributionError, setContributionError] = React.useState("");
+  const [abortingError, setAbortingError] = React.useState("");
+  const [endAndWithdrawError, setEndAndWithdrawError] = React.useState("");
 
   // for testing purpose..
   const etherScanAddress = "0x4d496ccc28058b1d74b7a19541663e21154f9c84"; // some dummy address.
@@ -76,7 +104,7 @@ function ViewCampaign() {
   const [acceptanceStatus, setAcceptanceStatus] = React.useState(false);
 
   useEffect(() => {
-    console.log("useEffect called");
+    console.log("fetching a campaign..");
     let ignore = false;
     // fetch the campaigns..
     const fetchData = async () => {
@@ -109,38 +137,31 @@ function ViewCampaign() {
     );
   }
 
-  async function abortCampaign() {
-    // console.log("abort campaign called");
-    if (acceptanceStatus === false && abortCampaignMsg.length == 0) return;
+  // async function abortCampaign() {
+  const handleAbortCampaign = async (data) => {
+    console.log("abort campaign called");
+    console.log(data);
+    if (data.acceptCondition === false && data.campaignAbortReason.length == 0)
+      return;
 
     // proceed further, only when valid.
-    await axios({
-      method: "DELETE",
-      url: api_url + "abort-campaign/" + campaignId,
-      data: {
-        reason: abortCampaignMsg || "Not Mentioned",
-      },
-    })
-      .then((response) => {
-        // console.log(response);
-        if (response.status == 200) {
-          // console.log(response.data.msg); // SHow this in snackbar.
-          setResponseSeverity("success");
-          setTimeout(window.location.reload(true), 3000); // Re-load the page
-          setResponseMsg(
-            response.data.msg + "\n Wallet balance will get effected soon."
-          );
-        } else setResponseSeverity("error");
-
-        setShowEndCampaignConfirmation(false); // close the modal
-        setShowResponse(true);
-      })
-      .catch((err) => {
-        setResponseSeverity("error");
-        setShowResponse(true);
-        setResponseMsg(err);
+    console.log("about to perform aborting..");
+    try {
+      const campaign = Campaign(campaignData.id); // get the campaign
+      const accounts = await web3.eth.getAccounts(); // backer account..
+      await campaign.methods.abortCampaignAndRefund().send({
+        from: accounts[0],
       });
-  }
+
+      console.log("abort success");
+      window.location.reload();
+      // after successful abort..
+      abortReset("", { keepValues: false }); // clear the values entered.
+    } catch (err) {
+      console.log(err);
+      setAbortingError(err);
+    }
+  };
 
   const handleClose = (event, reason) => {
     if (reason === "clickaway") {
@@ -175,18 +196,36 @@ function ViewCampaign() {
 
       const campaign = Campaign(campaignData.id); // get the campaign
       const accounts = await web3.eth.getAccounts(); // backer account..
-      await campaign.methods.contibute().send({
+      await campaign.methods.contribute().send({
         // register contribution..
         from: accounts[0],
         value: web3.utils.toWei(data.contribAmount, "ether"),
       });
 
       // after successful contribution..
-      reset("", { keepValues: false }); // clear the values entered.
+      contributionReset("", { keepValues: false }); // clear the values entered.
       setIsContributionSuccess(true);
     } catch (err) {
       console.log(err);
       setContributionError(err);
+    }
+  };
+
+  const handleEndAndWithdraw = async (data) => {
+    console.log("Withdraw called");
+    try {
+      const campaign = Campaign(campaignData.id); // get the campaign
+      const accounts = await web3.eth.getAccounts(); // backer account..
+      await campaign.methods.endCampaignAndCredit().send({
+        from: accounts[0],
+      });
+
+      // after successful end & credit..
+      console.log("Funds credited successfully to fundraiser's wallet.");
+      window.location.reload();
+    } catch (err) {
+      console.log(err);
+      setEndAndWithdrawError(err);
     }
   };
 
@@ -212,7 +251,8 @@ function ViewCampaign() {
                     label={campaignData.campaignStatus}
                     size="small"
                     color={
-                      campaignData.campaignStatus == "ACTIVE"
+                      campaignData.campaignStatus == "ACTIVE" ||
+                      campaignData.campaignStatus == "SUCCESS"
                         ? "success"
                         : "error"
                     }
@@ -255,6 +295,18 @@ function ViewCampaign() {
             Wallet Address of FundRaiser
           </Typography>
           <Typography>{`${campaignData.createdBy}`}</Typography>
+        </Container>
+        <Container>
+          <Typography variant="caption">
+            Contributions are accepted till <i>(Deadline)</i>
+          </Typography>
+          <Typography>{`${new Date(campaignData.deadline)}`}</Typography>
+          {(campaignData.campaignStatus == "EXPIRED" ||
+            campaignData.campaignStatus == "ABORTED") && (
+            <Typography>
+              <i>No contributions can be accepted now.</i>
+            </Typography>
+          )}
         </Container>
       </>
     );
@@ -309,23 +361,26 @@ function ViewCampaign() {
             <Alert
               severity="success"
               sx={{ marginTop: 2, marginBottom: 2 }}
-              onClose={() => setIsContributionSuccess(false)}
+              onClose={() => {
+                setIsContributionSuccess(false);
+                window.location.reload();
+              }}
             >
               <AlertTitle>Funded successfully</AlertTitle>
               Thanks for your valuable contributions.
             </Alert>
           ) : (
-            <form onSubmit={handleSubmit(handleContributedFunds)}>
+            <form onSubmit={contributionHandleSubmit(handleContributedFunds)}>
               <TextField
                 label="Contribution amount"
                 type={"number"}
                 inputProps={{
                   step: 0.00001,
                   min: campaignData[minAmountKey],
-                  max: campaignData[raisedMoneyKey],
+                  // max: campaignData[raisedMoneyKey],
                 }}
-                disabled={formState.isSubmitting}
-                {...register("contribAmount", { required: true })}
+                disabled={contributionFormState.isSubmitting}
+                {...contributionRegister("contribAmount", { required: true })}
                 helperText="Enter amount in Ether you want to contribute."
                 fullWidth
                 size="small"
@@ -348,7 +403,7 @@ function ViewCampaign() {
                   variant="contained"
                   type="submit"
                   fullWidth
-                  loading={formState.isSubmitting}
+                  loading={contributionFormState.isSubmitting}
                   sx={{ marginTop: 1 }}
                 >
                   Contribute Funds
@@ -400,7 +455,20 @@ function ViewCampaign() {
         <Alert severity="info" sx={{ marginTop: 1 }}>
           To withdraw raised funds, campaign has to be <strong>ended</strong>
         </Alert>
-        <form onSubmit={handleSubmit}>
+        {endAndWithdrawError && (
+          <Alert
+            severity="error"
+            sx={{ marginTop: 2, marginBottom: 2 }}
+            onClose={() => {
+              setEndAndWithdrawError(""); // erase the error msg.
+              window.location.reload(); // re-load the page to get the updated status
+            }}
+          >
+            <AlertTitle>{endAndWithdrawError.name}</AlertTitle>
+            {endAndWithdrawError.message}
+          </Alert>
+        )}
+        <form onSubmit={withdrawHandleSubmit(handleEndAndWithdraw)}>
           <Alert severity="warning" sx={{ marginTop: 1, marginBottom: 1 }}>
             <FormControlLabel
               control={
@@ -420,7 +488,9 @@ function ViewCampaign() {
             type="submit"
             fullWidth
             variant="contained"
+            loading={withdrawFormState.isSubmitting}
             color="error"
+            disabled={withdrawFormState.isSubmitting}
           >
             End campaign &amp; withdraw
           </LoadingButton>
@@ -432,37 +502,41 @@ function ViewCampaign() {
   function EndCampaign() {
     return (
       <>
-        {wallet.account === campaignData.createdBy && (
-          // {campaignData.status === "ACTIVE" && (
-          <>
-            <Typography variant="caption">Danger Zone</Typography>
-            <Container
-              sx={{
-                backgroundColor: "#e5989b",
-                padding: 1,
-                borderRadius: 3,
-              }}
-            >
-              <Stack direction="row" alignItems={"center"}>
-                <Container>
-                  <Typography variant="body1">Quit Campaign</Typography>
-                  <Typography variant="caption">
-                    Once you end a campaign, there is no going back. Please be
-                    certain.
-                  </Typography>
-                </Container>
-                <Button
-                  variant="contained"
-                  color="error"
-                  size="small"
-                  onClick={() => setShowEndCampaignConfirmation(true)}
-                >
-                  End campaign
-                </Button>
-              </Stack>
-            </Container>
-          </>
-        )}
+        {wallet.account === campaignData.createdBy &&
+          (campaignData.campaignStatus === "ACTIVE" ||
+            campaignData.campaignStatus === "SUCCESS") && (
+            <>
+              <Typography variant="caption">Danger Zone</Typography>
+              <Container
+                sx={{
+                  backgroundColor: "#e5989b",
+                  padding: 1,
+                  borderRadius: 3,
+                }}
+              >
+                <Stack direction="row" alignItems={"center"}>
+                  <Container>
+                    <Typography variant="body1">
+                      <strong>Quit</strong> &amp; <strong>Refund</strong>
+                    </Typography>
+                    <Typography variant="caption">
+                      Once you end a campaign, there is no going back. Please be
+                      certain.
+                    </Typography>
+                  </Container>
+                  <LoadingButton
+                    variant="contained"
+                    loading={abortFormState.isSubmitting}
+                    color="error"
+                    size="small"
+                    onClick={() => setShowEndCampaignConfirmation(true)}
+                  >
+                    Abort campaign
+                  </LoadingButton>
+                </Stack>
+              </Container>
+            </>
+          )}
       </>
     );
   }
@@ -474,38 +548,53 @@ function ViewCampaign() {
           open={showEndCampaignConfirmation}
           onClose={() => setShowEndCampaignConfirmation(false)}
         >
-          <Box>
-            <Typography>Hello</Typography>
-            <Box
-              width={400}
-              height={280}
-              bgcolor={"background.default"}
-              color={"text.primary"}
-              p={3}
-              borderRadius={3}
-              display="flex"
-              flexDirection={"column"}
-              gap={1}
-              sx={{ justifyContent: "center" }}
-              component="form"
-              // onSubmit={abortCampaign}
+          <Box
+            width={400}
+            height={300}
+            bgcolor={"background.default"}
+            color={"text.primary"}
+            p={3}
+            borderRadius={3}
+            display="flex"
+            flexDirection={"column"}
+            gap={1}
+            sx={{ justifyContent: "center" }}
+            // component="form"
+            // onSubmit={abortCampaign}
+          >
+            <Typography
+              variant="h6"
+              color="error"
+              textAlign="center"
+              gutterBottom
             >
-              <Typography
-                variant="h6"
-                color="error"
-                textAlign="center"
-                gutterBottom
+              Abort Campaign
+            </Typography>
+            {abortingError && (
+              <Alert
+                severity="error"
+                sx={{ marginTop: 2, marginBottom: 2 }}
+                onClose={() => {
+                  setAbortingError(""); // erase the error msg.
+                  window.location.reload(); // re-load the page to get the updated status
+                }}
               >
-                End Campaign
-              </Typography>
+                <AlertTitle>{abortingError.name}</AlertTitle>
+                {abortingError.message}
+              </Alert>
+            )}
+            <form onSubmit={abortHandleSubmit(handleAbortCampaign)}>
               <Stack direction="column">
                 <TextField
-                  label="Why would you like to end campaign?"
+                  label="Why would you like to abort campaign?"
                   multiline
+                  required
                   rows={3}
-                  name="campaignEndReason"
+                  {...abortRegister("campaignAbortReason", {
+                    required: true,
+                  })}
                   variant="standard"
-                  onChange={(e) => setAbortCampaignMsg(e.target.value)}
+                  disabled={abortFormState.isSubmitting}
                 />
                 <Typography variant="caption">
                   This reason will be published in campaign page to notify
@@ -513,26 +602,35 @@ function ViewCampaign() {
                 </Typography>
               </Stack>
               <Stack direction={"column"}>
-                <FormGroup sx={{ marginBottom: 1.5 }}>
-                  <FormControlLabel
-                    control={<Checkbox />}
-                    label="I accept that, if I end campaign, all the raised money can be refunded back to the backers."
-                    onChange={() => {
-                      setAcceptanceStatus(!acceptanceStatus);
-                      console.log(acceptanceStatus);
-                    }}
-                  />
-                </FormGroup>
-                <Button
+                <FormControlLabel
+                  control={
+                    <Checkbox required {...abortRegister("acceptCondition")} />
+                  }
+                  label="I accept that, if I abort campaign, all the raised money can be refunded back to the backers."
+                />
+
+                <LoadingButton
                   color="error"
                   variant="contained"
-                  disabled={acceptanceStatus == false}
-                  onClick={() => abortCampaign()}
+                  type="submit"
+                  fullWidth
+                  sx={{ marginTop: 1 }}
+                  disabled={abortFormState.isSubmitting}
                 >
-                  End Campaign
+                  Abort Campaign &amp; Refund to backers
+                </LoadingButton>
+                <Button
+                  color="primary"
+                  variant="contained"
+                  onClick={() => setShowEndCampaignConfirmation(false)}
+                  fullWidth
+                  sx={{ marginTop: 1 }}
+                  disabled={abortFormState.isSubmitting}
+                >
+                  Cancel
                 </Button>
               </Stack>
-            </Box>
+            </form>
           </Box>
         </StyledModal>
       </>
@@ -556,19 +654,37 @@ function ViewCampaign() {
               Current Status of campaign
             </Typography>
             <ShowCampaignBalance />
-            {wallet.account !== campaignData.createdBy ? (
+            {campaignData.campaignStatus === "ACTIVE" ||
+            campaignData.campaignStatus == "SUCCESS" ? (
               <>
-                <Typography variant="caption" sx={{ margin: 0 }}>
-                  Contribute
-                </Typography>
-                <BecomeBacker />
+                {wallet.account !== campaignData.createdBy ? (
+                  <>
+                    <Typography variant="caption" sx={{ margin: 0 }}>
+                      Contribute
+                    </Typography>
+                    <BecomeBacker />
+                  </>
+                ) : (
+                  <>
+                    <Typography variant="caption" sx={{ margin: 0 }}>
+                      Withdraw
+                    </Typography>
+                    <WithDrawFunds />
+                  </>
+                )}
               </>
             ) : (
               <>
                 <Typography variant="caption" sx={{ margin: 0 }}>
-                  Withdraw
+                  End status
                 </Typography>
-                <WithDrawFunds />
+                <Container>
+                  <Typography>
+                    {campaignData.campaignStatus == "EXPIRED"
+                      ? "Campaign has ended successfully..!!"
+                      : "Campign has aborted in between.  <fund raiser's reason here (In next version)>"}
+                  </Typography>
+                </Container>
               </>
             )}
           </Stack>

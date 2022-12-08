@@ -16,7 +16,7 @@ import CircularProgress from "@mui/material/CircularProgress";
 import {
   getDeployedCampaigns,
   getCampaignsSummary,
-} from "../../lib/getCampaigns";
+} from "../../utils/getCampaigns";
 
 // local imports..
 import NavBar from "../components/NavBar";
@@ -74,7 +74,7 @@ function HomePage() {
             {" Raise a campaign to help the needy."}
           </Typography>
           <Typography variant="body1">Welcome 👋 to the community.</Typography>
-          <Typography variant="body1">Development in progress 🚧.</Typography>
+          <Typography variant="body1">[ONLY] Core functionalities done 🚧. More features on the way..!! 🏃 </Typography>
         </Box>
         <Box sx={{ mt: 4, mb: 2 }}>
           <Stack>
@@ -89,12 +89,12 @@ function HomePage() {
                   Take part in active campaigns..
                 </Typography>
                 <Typography variant="caption">
-                  Top {campaignsList.length} recent active campaigns..
+                  Top {campaignsList.length} recent campaigns..
                 </Typography>
               </Box>
-              <Button onClick={() => navigate("/active-campaigns")}>
+              {/* <Button onClick={() => navigate("/active-campaigns")}>
                 View more
-              </Button>
+              </Button> */}
             </Stack>
             <Container sx={{ py: 2 }} maxWidth="md">
               {/* End hero unit */}
